@@ -17,6 +17,8 @@ from functools import partial
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from sklearn.svm import SVC
+from sklearn.naive_bayes import CategoricalNB
+from sklearn.linear_model import LogisticRegression
 
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import ParameterGrid 
@@ -87,6 +89,17 @@ parameters ={'rf': {'n_estimators': [50,100,300],
                      'kernel': ['linear', 'poly', 'rbf'],
                      'class_weight': ['balanced', None],
                      'random_state': [random_state]
+                 },
+             'nb': {'alpha': np.logspace(-2,1,4),
+                    'fit_prior': [True, False],
+                    'class_prior': [[.5, .5], None]
+                    },
+             'logreg': {
+                 'penalty': ['l2', 'l1', 'elasticnet'],
+                 'class_weight': [None, 'balanced'],
+                 'solver': ['saga'],
+                 'random_state': [random_state],
+                 'n_jobs':[-1]
                  }
     }
 
@@ -140,6 +153,8 @@ def model_evaluation(model, param_grid, model_name, cv=5):
 rf = RandomForestClassifier()
 xgboost = XGBClassifier()
 svc = SVC()
+nb = CategoricalNB()
+logreg = LogisticRegression()
 
 # # Preprocess data
 x_prep, y_prep = prep_data(x_train, y_train)
@@ -156,9 +171,11 @@ results['xgboost'] = model_evaluation(xgboost, list(ParameterGrid(parameters['xg
 # ## SVC
 results['svc'] = model_evaluation(svc, list(ParameterGrid(parameters['svc'])), 'svc', cv=5)
 
-# #Further models to test
-# * Naive Bayes
-# * Logistic Regression
+# ## Naive Bayes
+results['nb'] = model_evaluation(nb, list(ParameterGrid(parameters['nb'])), 'nb', cv=5)
+
+# ## Logistic Regression
+results['logreg'] = model_evaluation(logreg, list(ParameterGrid(parameters['logreg'])), 'logreg', cv=5)
 
 
 #%%
@@ -201,6 +218,9 @@ def prep_data_cnn(X,y):
     return tmp, y.values
 
 #%%
+from tensorflow.keras.layers import Conv1D
+from tensorflow.keras.layers import MaxPooling1D
+
 # # Basline NN
 def nn_sequential(hidden, output=1, hidden_activation='relu',output_activation='sigmoid'):
     
@@ -214,6 +234,31 @@ def nn_sequential(hidden, output=1, hidden_activation='relu',output_activation='
     return model
 
 # # Convolutional NN
+def nn_conv():
+    model = Sequential()
+    
+    model.add(Conv1D(filters = 32,
+                     kernel_size = 3,
+                     strides = 1,
+                     padding = 'valid',
+                     activation = 'relu'))
+    
+    model.add(MaxPooling1D(4, 2))
+    
+    model.add(Conv1D(filters = 16,
+                     kernel_size = 3,
+                     strides = 1,
+                     padding = 'valid',
+                     activation = 'relu'))
+    
+    model.add(MaxPooling1D(4, 2))
+    
+    #Dense
+    model.add(tf.keras.layers.Flatten())
+    model.add(tf.keras.layers.Dense(units=128, activation='relu')),
+    model.add(tf.keras.layers.Dense(units=2, activation=tf.nn.softmax))
+    
+    return model
 
 #%%
 from tensorflow.keras.optimizers import SGD
@@ -237,6 +282,26 @@ pred[pred < 0.5] = 0
 #Compute scores
 score = [m(y_prep, pred) for m in metrics]
 
+#%%
+
+# ## CNN
+x_prep, y_prep = prep_data_cnn(x_train, y_train)
+
+BATCH_SIZE = 10
+EPOCHS=3
+
+model = nn_conv()
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=1e-3),
+                 loss=tf.keras.losses.sparse_categorical_crossentropy,
+                 metrics=['accuracy'])
+
+model.fit(x_prep, y_prep, batch_size=BATCH_SIZE, epochs=EPOCHS)
+
+x_prep, y_prep = prep_data_cnn(x_test, y_test)
+pred = model.predict(x_prep)
+pred = np.argmax(pred, axis=1)
+#Compute scores
+score = [m(y_prep, pred) for m in metrics]
 
 
 

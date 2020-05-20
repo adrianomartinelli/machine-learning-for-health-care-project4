@@ -305,4 +305,35 @@ score = [m(y_prep, pred) for m in metrics]
 
 
 
+#%%
 
+# ## Experimental Grid-Search visualisation
+import pandas
+import matplotlib.pyplot as plt
+from pandas.plotting import parallel_coordinates
+import seaborn as sns
+
+res = results['svc']
+tmp = res.loc['params']
+df = pd.Series()
+for i in tmp:
+    df = pd.concat([df,pd.Series(i)], axis = 1)
+
+df = df.iloc[:,1:]
+df = df.T
+
+df['C'] = df['C'].astype(np.float32)
+df = df.drop(['random_state'], axis = 1)
+
+d = dict()
+for k in df.select_dtypes('object').columns.tolist():
+    d[k] = {j:i for i,j in enumerate(df[k].unique())}
+
+df = df.replace(d)
+
+df.C = df.C.apply(lambda x: np.log10(x))
+df['f1']= res.loc['f1_score'].values
+df['setting']= res.loc['setting'].values
+
+parallel_coordinates(df, 'setting')
+plt.show()

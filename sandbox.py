@@ -18,7 +18,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, precision_recall_curve, auc
 from sklearn.model_selection import KFold
-
+from sklearn.utils.class_weight import compute_sample_weight
 
 # Global variables
 random_state = 42
@@ -41,9 +41,9 @@ def central_as(x):
     return acc[np.argmin(dis)]
     
 
+# Features engineering
 def prep_data(X,y):
     '''Engineer features'''
-    # # Features engineering
     nuc_counts = X.apply(lambda x: [x.count(i) for i in nuc])
     dinuc_counts = X.apply(lambda x: [x.count(i) for i in dinuc])
     df = nuc_counts + dinuc_counts
@@ -224,6 +224,14 @@ def cross_validation(x_train, y_train, settings, x_test=None, y_test=None, x_tes
     run = -1
     x = np.asarray(x_train)
     y = np.asarray(y_train)
+    f = sum(y)
+    tot = len(y)
+    t = tot - f
+    wt = (1 / t) * (tot) / 2.0
+    wf = (1 / f) * (tot) / 2.0
+    class_weights = {0: wt, 1: wf}
+    # ca. 341
+    print("Weights for classes:", class_weights)
     for s in settings:
         for train_idx, val_idx in kf.split(x, y):
             model = init_model(model_type=s[0], lr=s[1])
@@ -231,24 +239,25 @@ def cross_validation(x_train, y_train, settings, x_test=None, y_test=None, x_tes
             train_y = y[train_idx]
             val_x = x[val_idx]
             val_y = y[val_idx]
-            hist = model.fit(train_x, train_y, epochs=epochs, batch_size=s[2], validation_data=(val_x, val_y))
+            hist = model.fit(train_x, train_y, epochs=epochs, batch_size=s[2], validation_data=(val_x, val_y),
+                             class_weight = class_weights)
             acc = hist.history['val_loss'][-1]  # final validation loss
             run += 1
             if test_hidden:
                 # Test set with labels
-                pred = model.predict(x_test)
-                pred = np.argmax(pred, axis=1)
+                pred_ = model.predict(x_test)
+                pred = np.argmax(pred_, axis=1)
                 score = [m(y_test, pred) for m in metrics]
                 # Test set hidden labels
-                predh = model.predict(x_testh)
-                predh = np.argmax(predh, axis=1)
-                results.append([run, s, acc, pred, score, predh])
+                predh_ = model.predict(x_testh)
+                predh = np.argmax(predh_, axis=1)
+                results.append([run, s, acc, pred_, score, predh_])
             else:
                 # Test set with labels
-                pred = model.predict(x_test)
-                pred = np.argmax(pred, axis=1)
+                pred_ = model.predict(x_test)
+                pred = np.argmax(pred_, axis=1)
                 score = [m(y_test, pred) for m in metrics]
-                results.append([run, s, acc, pred, score])
+                results.append([run, s, acc, pred_, score])
             del model
     return results
 

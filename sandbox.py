@@ -18,6 +18,9 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, precision_recall_curve, auc
 
 
+from sklearn.model_selection import KFold
+
+
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.losses import BinaryCrossentropy
 
@@ -28,22 +31,11 @@ nuc = ['A', 'T', 'G', 'C']
 dinuc = itertools.product(nuc, repeat = 2)
 dinuc =[i[0]+i[1] for i in dinuc]
 
+
 # Metrics
 metrics = [accuracy_score, precision_score, recall_score, f1_score]
 metrics_name =[i.__name__ for i in metrics]
 metrics = [accuracy_score, partial(precision_score,zero_division=0), recall_score, f1_score]
-
-# #Read in data
-df = pd.read_csv('exercise_data/C_elegans_acc_seq.csv', header=None, names =['label', 'seq'])
-y = df.label
-X = df.seq
-
-x_train, x_test, y_train, y_test = train_test_split(X,y, test_size = 0.3, random_state = random_state)
-
-print("xtrain:", x_train)
-print("X seq:", X)
-
-random_state = 42
 
 
 # #Helper Functions
@@ -53,15 +45,14 @@ def central_as(x):
     dis = [abs(i-len(x)/2) for i in acc]
     return acc[np.argmin(dis)]
     
+
 def prep_data(X,y):
     '''Engineer features'''
-    
     # # Features engineering
     nuc_counts = X.apply(lambda x: [x.count(i) for i in nuc])
     dinuc_counts = X.apply(lambda x: [x.count(i) for i in dinuc])
     df = nuc_counts + dinuc_counts
     df = pd.DataFrame([*df], columns = nuc+dinuc)
-    
     return df.values, y.values
 
 
@@ -74,6 +65,7 @@ def prep_data_nn(X,y):
     return X.values, y.values
 
 
+# One-hot encoding 
 def prep_data_cnn(X,y):
     ohe = OneHotEncoder()
     ohe.fit(np.array(nuc).reshape(-1,1))    
@@ -101,7 +93,7 @@ def nn_sequential(hidden, output=1, hidden_activation='relu',output_activation='
     return model
 
 
-# # Convolutional NN
+# # Convolutional NN referred to as 'cnn2' in our notebooks
 def nn_conv():
     model = Sequential()
     model.add(Conv1D(filters = 32,
@@ -123,6 +115,7 @@ def nn_conv():
     return model
 
 
+# convolutional NN with a sigmoid output layer for 0-1 loss (compared to categorical crossentropy -> did not use this)
 def nn_conv_sigmoid():
     model = Sequential()
     model.add(Conv1D(filters = 32,
@@ -144,8 +137,7 @@ def nn_conv_sigmoid():
     return model
 
 
-# Todo: implement this model
-
+# Convolutional Layer used in 'cnn' model
 class conv_block(layers.Layer):
     def __init__(self):
         super(conv_block, self).__init__()
@@ -161,6 +153,8 @@ class conv_block(layers.Layer):
     def call(self, x):
         return self.block(x)
 
+    
+# Recurrent (LSTM) Layer used in 'rnn' model
 class rnn_block(layers.Layer):
     def __init__(self, n_nodes=128):
         super(rnn_block, self).__init__()
@@ -170,8 +164,10 @@ class rnn_block(layers.Layer):
         print(x.shape)
         return self.block(x)
 
+    
+# Feedforward Layer used in both 'cnn' and 'rnn' model
 class ffl_block(layers.Layer):
-    def __init__(self, n_nodes=256):
+    def __init__(self, n_nodes):
         super(ffl_block, self).__init__()
         l2_reg = tf.keras.regularizers.l2
         self.block = tf.keras.models.Sequential([
@@ -185,6 +181,7 @@ class ffl_block(layers.Layer):
         return self.block(x)
 
 
+# initialize 'cnn' model
 def init_conv_net(n_conv=2, n_ffl=3, n_nodes=1024):
     model = tf.keras.models.Sequential()
     for c in range(n_conv):
@@ -196,6 +193,7 @@ def init_conv_net(n_conv=2, n_ffl=3, n_nodes=1024):
     return model
 
 
+# initialize 'rnn' model
 def init_rnn_net(n_ffl=3, n_nodes=512):
     model = tf.keras.models.Sequential()
     model.add(rnn_block(64)) # if you want to add more use return_sequences=True and add another lstm layer on top of that
@@ -206,62 +204,41 @@ def init_rnn_net(n_ffl=3, n_nodes=512):
     return model
 
 
-# # NN
-x_prep, y_prep = prep_data_nn(x_train, y_train)
-
-print("prepared x:",x_prep)
-print("prepared y:",y_prep)
-print(x_prep.shape)
-print(y_prep.shape)
-
-BATCH_SIZE = 10
-EPOCHS=3
-
-"""
-model = nn_sequential([256, 256, 64])
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-model.fit(x_prep, y_prep, batch_size=BATCH_SIZE, epochs=EPOCHS)
-
-x_prep, y_prep = prep_data_nn(x_test, y_test)
-pred = model.predict(x_prep)
-pred[pred >= 0.5] = 1
-pred[pred < 0.5] = 0
-#Compute scores
-score = [m(y_prep, pred) for m in metrics]
-
-#%%
-"""
-# ## CNN
-x_prep, y_prep = prep_data_cnn(x_train, y_train)
-print("cnn input shape:", x_prep.shape)
-print("cnn output shape:", y_prep.shape)
-
-
-BATCH_SIZE = 10
-EPOCHS=30
-
-cnn_model = init_conv_net()
-rnn_model = init_rnn_net()
-
-
-print("TRAINING CNN MODEL:")
-
-cnn_model.compile(optimizer=tf.keras.optimizers.Adam(lr=1e-3),
+# Used to flexibly call model architecture based on 'model_type'
+def init_model(model_type='cnn', lr=1e-3):
+    if model_type == 'cnn':
+        model = init_conv_net()
+    elif model_type == 'cnn2':
+        model = nn_conv()
+    elif model_type == 'rnn':
+        model = init_conv_net()
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=lr),
                  loss=tf.keras.losses.sparse_categorical_crossentropy,
                  metrics=['accuracy'])
+    return model
 
-# cnn_model.fit(x_prep, y_prep, batch_size=BATCH_SIZE, epochs=EPOCHS)
-print("TRAINING RNN MODEL:")
 
-rnn_model.compile(optimizer=tf.keras.optimizers.Adam(lr=1e-3),
-                 loss=tf.keras.losses.sparse_categorical_crossentropy,
-                 metrics=['accuracy'])
-rnn_model.fit(x_prep, y_prep, batch_size=BATCH_SIZE, epochs=EPOCHS)
-pred = rnn_model.predict(x_prep)
-pred = np.argmax(pred, axis=1)
-#Compute scores
-score = [m(y_prep, pred) for m in metrics]
-print(score)
-
-#%%
+# Crossvalidation function (takes as input training data, a list of settings etc)
+def cross_validation(x_train, y_train, settings, x_test=None, y_test=None, k=5, epochs=30, batch_size=8):
+    results = []
+    kf = KFold(n_splits=k)
+    run = -1
+    x = np.asarray(x_train)
+    y = np.asarray(y_train)
+    for s in settings:
+        for train_idx, val_idx in kf.split(x, y):
+            model = init_model(model_type=s[0], lr=s[1])
+            train_x = x[train_idx]
+            train_y = y[train_idx]
+            val_x = x[val_idx]
+            val_y = y[val_idx]
+            hist = model.fit(train_x, train_y, epochs=epochs, batch_size=s[2], validation_data=(val_x, val_y))
+            acc = hist.history['val_loss'][-1]  # final validation loss
+            score = None
+            if x_test != None:
+                pred = model.predict(x_test)
+                pred = np.argmax(pred, axis=1)
+                score = [m(y_test, pred) for m in metrics]
+            run+=1
+            results.append({run: (s, acc, model, score)})
+    return results

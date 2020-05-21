@@ -3,7 +3,6 @@ import pandas as pd
 
 from functools import partial
 import itertools
-from sklearn.model_selection import train_test_split
 
 import tensorflow
 import tensorflow as tf
@@ -11,18 +10,14 @@ from tensorflow.keras import Sequential, layers
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Conv1D
 from tensorflow.keras.layers import MaxPooling1D
-
-from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import OneHotEncoder
-
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, precision_recall_curve, auc
-
-
-from sklearn.model_selection import KFold
-
-
 from tensorflow.keras.optimizers import SGD
 from tensorflow.keras.losses import BinaryCrossentropy
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, precision_recall_curve, auc
+from sklearn.model_selection import KFold
 
 
 # Global variables
@@ -38,7 +33,7 @@ metrics_name =[i.__name__ for i in metrics]
 metrics = [accuracy_score, partial(precision_score,zero_division=0), recall_score, f1_score]
 
 
-# #Helper Functions
+# Helper Functions
 def central_as(x):
     ''' Finde the most central AG dinucleotide'''
     acc = [i.start() for i in re.finditer('AG', x)]
@@ -66,7 +61,7 @@ def prep_data_nn(X,y):
 
 
 # One-hot encoding 
-def prep_data_cnn(X,y):
+def prep_data_cnn(X,y=None, use_y=True):
     ohe = OneHotEncoder()
     ohe.fit(np.array(nuc).reshape(-1,1))    
     #Split sequence in list of letters
@@ -79,11 +74,14 @@ def prep_data_cnn(X,y):
     tmp = [i.reshape(1,-1,4) for i in tmp]
     #Concat along axis=0
     tmp = np.concatenate(tmp, axis=0)
-    y[y==-1] = 0
-    return tmp, y.values
+    if use_y:
+        y[y==-1] = 0
+        return tmp, y.values
+    else:
+        return tmp
 
 
-# # Basline NN
+# Basline NN (only applies a linear layer -> not used in our analysis)
 def nn_sequential(hidden, output=1, hidden_activation='relu',output_activation='sigmoid'):
     model = Sequential()
     model.add(Dense(hidden[0], input_shape = (82,), activation=hidden_activation))
@@ -93,7 +91,7 @@ def nn_sequential(hidden, output=1, hidden_activation='relu',output_activation='
     return model
 
 
-# # Convolutional NN referred to as 'cnn2' in our notebooks
+# Convolutional NN referred to as 'cnn2' in our notebooks
 def nn_conv():
     model = Sequential()
     model.add(Conv1D(filters = 32,
@@ -115,7 +113,7 @@ def nn_conv():
     return model
 
 
-# convolutional NN with a sigmoid output layer for 0-1 loss (compared to categorical crossentropy -> did not use this)
+# cnn2 with a sigmoid output layer for 0-1 loss (compared to categorical crossentropy -> did not use this)
 def nn_conv_sigmoid():
     model = Sequential()
     model.add(Conv1D(filters = 32,
@@ -161,7 +159,6 @@ class rnn_block(layers.Layer):
         self.block = layers.LSTM(n_nodes)
 
     def call(self, x):
-        print(x.shape)
         return self.block(x)
 
     
@@ -181,7 +178,7 @@ class ffl_block(layers.Layer):
         return self.block(x)
 
 
-# initialize 'cnn' model
+# Initialize 'cnn' model
 def init_conv_net(n_conv=2, n_ffl=3, n_nodes=1024):
     model = tf.keras.models.Sequential()
     for c in range(n_conv):
@@ -193,7 +190,7 @@ def init_conv_net(n_conv=2, n_ffl=3, n_nodes=1024):
     return model
 
 
-# initialize 'rnn' model
+# Initialize 'rnn' model
 def init_rnn_net(n_ffl=3, n_nodes=512):
     model = tf.keras.models.Sequential()
     model.add(rnn_block(64)) # if you want to add more use return_sequences=True and add another lstm layer on top of that
@@ -218,9 +215,11 @@ def init_model(model_type='cnn', lr=1e-3):
     return model
 
 
-# Crossvalidation function (takes as input training data, a list of settings etc)
-def cross_validation(x_train, y_train, settings, x_test=None, y_test=None, k=5, epochs=30, batch_size=8):
+# Crossvalidation function (takes as input training data, a list of settings testing data (with (x_test&y_test) and /wo (x_testh) labels, the crossvalidationsplit ~ 5, number of epochs (default 30) and batch_size.
+def cross_validation(x_train, y_train, settings, x_test=None, y_test=None, x_testh=None, k=5, epochs=30, batch_size=8,
+                    test_hidden=True):
     results = []
+    models = []
     kf = KFold(n_splits=k)
     run = -1
     x = np.asarray(x_train)
@@ -234,11 +233,62 @@ def cross_validation(x_train, y_train, settings, x_test=None, y_test=None, k=5, 
             val_y = y[val_idx]
             hist = model.fit(train_x, train_y, epochs=epochs, batch_size=s[2], validation_data=(val_x, val_y))
             acc = hist.history['val_loss'][-1]  # final validation loss
-            score = None
-            if x_test != None:
+            run += 1
+            if test_hidden:
+                # Test set with labels
                 pred = model.predict(x_test)
                 pred = np.argmax(pred, axis=1)
                 score = [m(y_test, pred) for m in metrics]
-            run+=1
-            results.append({run: (s, acc, model, score)})
+                # Test set hidden labels
+                predh = model.predict(x_testh)
+                predh = np.argmax(predh, axis=1)
+                results.append([run, s, acc, pred, score, predh])
+            else:
+                # Test set with labels
+                pred = model.predict(x_test)
+                pred = np.argmax(pred, axis=1)
+                score = [m(y_test, pred) for m in metrics]
+                results.append([run, s, acc, pred, score])
+            del model
     return results
+
+
+# Run test set with models | not in use anymore
+def test_run(models, x_test, y_test=None):
+    output = []
+    for model in models:
+        score = None
+        if y_test != None:
+            pred = model.predict(x_test)
+            pred = np.argmax(pred, axis=1)
+            predh = model.predict(x_testh)
+            predh = np.argmax(predh, axis=1)
+            score = [m(y_test, pred) for m in metrics]  # loss on the testing set
+            output.append(predh, pred, score)
+        else:
+            pred = model.predict(x_test)
+            pred = np.argmax(pred, axis=1)
+            output.append(pred)
+    return output
+
+
+# Plotting function for AUC and ROC
+def plotting_results(cv):
+    y_prop = nb.predict_proba(x)
+    y_prop =y_prop[:,1]
+    roc =roc_curve(y_test, y_prop)
+
+    label = 'AUC: {:.4}'.format(auc(roc[0], roc[1]))
+    plt.plot(roc[0], roc[1], label = label)
+    plt.plot([0, 1], [0, 1], linestyle='--', lw=1, color='gray',label='Random', alpha=.8)
+    plt.legend()
+    plt.title('ROC Curve')
+    plt.xlabel('FPR')
+    plt.ylabel('TPR')
+
+    #PR curve
+    prc = plot_precision_recall_curve(nb, x, y)
+    prc.ax_.set_title('Precision-Recall Curve')
+    
+
+

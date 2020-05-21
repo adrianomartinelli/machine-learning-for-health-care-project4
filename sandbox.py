@@ -179,7 +179,7 @@ class ffl_block(layers.Layer):
 
 
 # Initialize 'cnn' model
-def init_conv_net(n_conv=2, n_ffl=3, n_nodes=1024):
+def init_conv_net(n_conv=2, n_ffl=3, n_nodes=256):
     model = tf.keras.models.Sequential()
     for c in range(n_conv):
         model.add(conv_block())
@@ -191,9 +191,9 @@ def init_conv_net(n_conv=2, n_ffl=3, n_nodes=1024):
 
 
 # Initialize 'rnn' model
-def init_rnn_net(n_ffl=3, n_nodes=512):
+def init_rnn_net(n_ffl=3, n_nodes=256):
     model = tf.keras.models.Sequential()
-    model.add(rnn_block(64)) # if you want to add more use return_sequences=True and add another lstm layer on top of that
+    model.add(rnn_block(32)) # if you want to add more use return_sequences=True and add another lstm layer on top of that
     # model.add(layers.Flatten())
     for f in range(n_ffl):
         model.add(ffl_block(int(n_nodes / (f+1))))

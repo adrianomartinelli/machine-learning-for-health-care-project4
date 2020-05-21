@@ -177,11 +177,11 @@ results = dict()
 
 # ## Random Forest
 print('rf')
-results['rf'] = model_evaluation(rf, x_prep, y_prep, list(ParameterGrid(parameters['rf'])), 'rf', cv=5)
+#results['rf'] = model_evaluation(rf, x_prep, y_prep, list(ParameterGrid(parameters['rf'])), 'rf', cv=5)
 
 # ## xgboost
 print('xgboost')
-results['xgboost'] = model_evaluation(xgboost, x_prep, y_prep, list(ParameterGrid(parameters['xgboost'])), 'xgboost', cv=5)
+#results['xgboost'] = model_evaluation(xgboost, x_prep, y_prep, list(ParameterGrid(parameters['xgboost'])), 'xgboost', cv=5)
 
 # ## SVC
 # SVC not feasible with the size of this data set
@@ -190,13 +190,13 @@ print('svc')
 
 # ## Logistic Regression
 print('logreg')
-results['logreg'] = model_evaluation(logreg,x_prep, y_prep, list(ParameterGrid(parameters['logreg'])), 'logreg', cv=5)
+#results['logreg'] = model_evaluation(logreg,x_prep, y_prep, list(ParameterGrid(parameters['logreg'])), 'logreg', cv=5)
 
 # ## Naive Bayes
 print('nb')
 #prep data for CategoricalNB()
 x_prep, y_prep = prep_nb(x_train, y_train)
-results['nb'] = model_evaluation(nb, x_prep, y_prep, list(ParameterGrid(parameters['nb']))[0], 'nb', cv=5)
+results['nb'] = model_evaluation(nb, x_prep, y_prep, list(ParameterGrid(parameters['nb'])), 'nb', cv=5)
 
 #%%
 
